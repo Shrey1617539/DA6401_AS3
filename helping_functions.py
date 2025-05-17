@@ -1,6 +1,11 @@
-import numpy
-import tensorflow.keras as keras
-
+import math
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.utils import pad_sequences
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Model
 class seq2seq:
     def __init__(
         self,
@@ -167,146 +172,198 @@ class seq2seq:
         )
     
     def build_inference_model(self):
-        encoder_inputs = self.training_model.get_layer('encoder_inputs').input
-        encoder_embedding = self.training_model.get_layer('encoder_embedding')(encoder_inputs)
+        # Encoder
+        encoder_inputs = keras.layers.Input(shape=(None,), name='encoder_inputs')
+        encoder_embedding_layer = self.training_model.get_layer('encoder_embedding')
+        encoder_embedding = encoder_embedding_layer(encoder_inputs)
 
-        encoder_output = encoder_embedding
+        encoder_outputs = encoder_embedding
         encoder_states = []
         for i in range(self.encoder_layers):
-            layer = self.training_model.get_layer('encoder_{}'.format(i))
-            encoder_output, *states = layer(encoder_output)
-            encoder_states.extend(states)
+            encoder_rnn_layer = self.training_model.get_layer(f'encoder_{i}')
+            encoder_outputs, *state = encoder_rnn_layer(encoder_outputs)
+            encoder_states.extend(state)
 
-
-        # if self.encoder_type == 'LSTM':
-        #     encoder_states = [
-        #         self.training_model.get_layer('encoder_{}'.format(self.encoder_layers - 1)).output[0],
-        #         self.training_model.get_layer('encoder_{}'.format(self.encoder_layers - 1)).output[1]
-        #     ]
-        # else:
-        #     encoder_states = [
-        #         self.training_model.get_layer('encoder_{}'.format(self.encoder_layers - 1)).output
-        #     ]
-        
         self.encoder_model = keras.models.Model(
             inputs=encoder_inputs,
             outputs=encoder_states
         )
 
+        # Decoder
+        decoder_inputs = keras.layers.Input(shape=(None,), name='decoder_inputs')
+        decoder_embedding_layer = self.training_model.get_layer('decoder_embedding')
+        decoder_embedding = decoder_embedding_layer(decoder_inputs)
 
-
-        decoder_inputs = self.training_model.get_layer('decoder_inputs').input
-        decoder_embedding = self.training_model.get_layer('decoder_embedding')(decoder_inputs)
-        
         decoder_states_inputs = []
         for idx, state in enumerate(encoder_states):
             decoder_states_inputs.append(
                 keras.layers.Input(shape=(self.hidden_units,), name=f'decoder_state_input_{idx}')
             )
-        # if self.decoder_type == 'LSTM':
-        #     decoder_states_inputs = keras.layers.Input(shape=(self.hidden_units,))
-        # else:
-        #     decoder_state_input = keras.layers.Input(shape=(self.hidden_units,))
-        #     decoder_states_inputs = [decoder_state_input]
-        
 
         decoder_outputs = decoder_embedding
-        decoder_states = []
         state_idx = 0
+        decoder_states = []
         for i in range(self.decoder_layers):
-            layer = self.training_model.get_layer('decoder_{}'.format(i))
-            if i < self.encoder_layers:
-                if self.decoder_type == 'LSTM':
-                    init_h = decoder_states_inputs[state_idx]
-                    init_c = decoder_states_inputs[state_idx + 1]
-                    decoder_outputs, state_h, state_c = layer(
-                        decoder_outputs,
-                        initial_state=[init_h, init_c]
-                    )
-                    decoder_states.extend([state_h, state_c])
-                    state_idx += 2
-                else:
-                    init_h = decoder_states_inputs[state_idx]
-                    decoder_outputs, state_h = layer(
-                        decoder_outputs,
-                        initial_state=[init_h]
-                    )
-                    decoder_states.append(state_h)
-                    state_idx += 1
+            decoder_rnn_layer = self.training_model.get_layer(f'decoder_{i}')
+            if self.decoder_type == 'LSTM':
+                init_h = decoder_states_inputs[state_idx]
+                init_c = decoder_states_inputs[state_idx + 1]
+                decoder_outputs, state_h, state_c = decoder_rnn_layer(
+                    decoder_outputs, initial_state=[init_h, init_c]
+                )
+                decoder_states.extend([state_h, state_c])
+                state_idx += 2
             else:
-                if self.decoder_type == 'LSTM':
-                    init_h = decoder_states_inputs[-2]
-                    init_c = decoder_states_inputs[-1]
-                    decoder_outputs, state_h, state_c = layer(
-                        decoder_outputs,
-                        initial_state=[init_h, init_c]
-                    )
-                    decoder_states.extend([state_h, state_c])
-                else:
-                    init_h = decoder_states_inputs[-1]
-                    decoder_outputs, state_h = layer(
-                        decoder_outputs,
-                        initial_state=[init_h]
-                    )
-                    decoder_states.append(state_h)
+                init_h = decoder_states_inputs[state_idx]
+                decoder_outputs, state_h = decoder_rnn_layer(
+                    decoder_outputs, initial_state=[init_h]
+                )
+                decoder_states.append(state_h)
+                state_idx += 1
 
-            # outputs = layer(decoder_outputs, initial_state=decoder_states_inputs)
-    
-            
-            # if self.decoder_type == 'LSTM':
-            #     decoder_outputs, state_h, state_c = outputs
-            #     decoder_states = [state_h, state_c]
-            # else:
-            #     decoder_outputs, state_h = outputs
-                # decoder_states = [state_h]
-        
-        decoder_outputs = self.training_model.get_layer('decoder_dense')(decoder_outputs)
+        decoder_dense_layer = self.training_model.get_layer('decoder_dense')
+        decoder_outputs = decoder_dense_layer(decoder_outputs)
 
         self.decoder_model = keras.models.Model(
             inputs=[decoder_inputs] + decoder_states_inputs,
             outputs=[decoder_outputs] + decoder_states
         )
-        # for i in range(self.decoder_layers):
-        #     if self.decoder_type == 'LSTM':
-        #         decoder_lstm = self.training_model.get_layer('decoder_{}'.format(i))
+    
+    def compile(self, optimizer='adam', loss = 'categorical_crossentropy', metrics=['accuracy']):
+        self.training_model.compile(
+            optimizer=optimizer,
+            loss=loss,
+            metrics=metrics
+        )
+    
+    def fit(self, x, y, batch_size=64, epochs=10, validation_split=0):
+        self.training_model.fit(
+            x=x,
+            y=y,
+            batch_size=batch_size,
+            epochs=epochs,
+            validation_split=validation_split,
+        )
 
-        #         if i == 0:
-        #             decoder_outputs, state_h, state_c = decoder_lstm(
-        #                 decoder_outputs,
-        #                 initial_state=decoder_states_inputs
-        #             )
-        #             decoder_states = [state_h, state_c]
-        #         else:
-        #             decoder_outputs = decoder_lstm(decoder_outputs)
-            
-        #     elif self.decoder_type == 'GRU':
-        #         decoder_gru = self.training_model.get_layer('decoder_{}'.format(i))
+    def evaluate(
+        self,
+        input_seqs,
+        target_seqs,
+        start_token,
+        end_token,
+        max_dec_len,
+        batch_size=64):
+        """
+        Batched beam search decoding + exact‐match accuracy.
+        Uses one big GPU call per time‐step over all (batch×beam) hypotheses.
+        """
+        N = input_seqs.shape[0]
+        n_batches = math.ceil(N / batch_size)
+        total_correct = 0
 
-        #         if i == 0:
-        #             decoder_outputs, state_h = decoder_gru(
-        #                 decoder_outputs,
-        #                 initial_state=decoder_states_inputs
-        #             )
-        #             decoder_states = [state_h]
-        #         else:
-        #             decoder_outputs = decoder_gru(decoder_outputs)
-            
-        #     elif self.decoder_type == 'RNN':
-        #         decoder_rnn = self.training_model.get_layer('decoder_{}'.format(i))
+        for bi in range(n_batches):
+            print(bi)
+            # --- 1) Slice batch ---
+            batch_inputs = input_seqs[bi*batch_size : (bi+1)*batch_size]
+            bsz = batch_inputs.shape[0]
 
-        #         if i == 0:
-        #             decoder_outputs, state_h = decoder_rnn(
-        #                 decoder_outputs,
-        #                 initial_state=decoder_states_inputs
-        #             )
-        #             decoder_states = [state_h]
-        #         else:
-        #             decoder_outputs = decoder_rnn(decoder_outputs)
-        
-        # decoder_dense = self.training_model.get_layer('decoder_dense')
-        # decoder_outputs = decoder_dense(decoder_outputs)
-        # self.decoder_model = keras.models.Model(
-        #     inputs=[decoder_inputs] + decoder_states_inputs,
-        #     outputs=[decoder_outputs] + decoder_states
-        # )
-                    
+            # --- 2) Encoder: get initial states ---
+            enc_states = self.encoder_model.predict(batch_inputs, verbose=0)
+            # enc_states: list of arrays, each (bsz, hidden)
+
+            # --- 3) Tile states & init beams ---
+            B = self.beam_width
+            # For each state array, expand (bsz,hidden)->(bsz,B,hidden) then flatten
+            flat_states = []
+            for state in enc_states:
+                tiled = np.repeat(state[:, None, :], B, axis=1)
+                flat_states.append(tiled.reshape(bsz*B, -1))
+
+            # Each hypothesis starts with one <start> token
+            flat_dec_input = np.full((bsz*B, 1), start_token, dtype='int32')
+
+            # Keep track of:
+            #   - sequences: list of token‐lists per (batch,beam)
+            #   - scores: log‐probs per (batch,beam)
+            seqs   = [[[start_token]] * B for _ in range(bsz)]
+            scores = np.zeros((bsz, B), dtype=np.float32)
+
+            # --- 4) Beam‐search loop ---
+            for t in range(max_dec_len):
+                # 4a) One big predict over all hypotheses
+                inputs = [flat_dec_input] + flat_states
+                outs   = self.decoder_model.predict(inputs, verbose=0)
+                logits = outs[0]                # shape: (bsz*B, 1, V)
+                next_lp = np.log(logits[:,0,:] + 1e-9)  # (bsz*B, V)
+
+                # 4b) split back to (bsz, B, V)
+                next_lp = next_lp.reshape(bsz, B, -1)
+
+                new_seqs  = []
+                new_scores = []
+                new_states = [np.zeros_like(s) for s in flat_states]
+
+                # 4c) For each item in batch, pick top B out of B×V
+                for i in range(bsz):
+                    # accumulate scores + new log‐probs
+                    total_lp = scores[i][:, None] + next_lp[i]   # (B, V)
+                    flat_indices = total_lp.reshape(-1)          # (B*V,)
+
+                    # top‐B indices in flattened B*V
+                    topk_idx = np.argpartition(-flat_indices, B-1)[:B]
+                    topk_scores = flat_indices[topk_idx]
+
+                    # decode which beam & token each came from
+                    prev_beam = topk_idx // next_lp.shape[2]      # (B,)
+                    token_id  = topk_idx %  next_lp.shape[2]      # (B,)
+
+                    # build new sequences & gather new states
+                    bs_seqs = []
+                    for j, (bprev, tok) in enumerate(zip(prev_beam, token_id)):
+                        # copy old sequence + new token
+                        seq = seqs[i][bprev] + [int(tok)]
+                        bs_seqs.append(seq)
+
+                        # compute new state slice index in flat arrays
+                        src_idx = i*B + bprev
+                        dst_idx = i*B + j
+                        # copy each state vector for this hypothesis
+                        for k, st in enumerate(outs[1:]):
+                            new_states[k][dst_idx] = st[src_idx]
+
+                    new_seqs.append(bs_seqs)
+                    new_scores.append(topk_scores)
+
+                # 4d) reorganize for next step
+                seqs   = new_seqs
+                scores = np.stack(new_scores, axis=0)  # (bsz, B)
+                flat_states = [ns.reshape(bsz*B, -1) for ns in new_states]
+                # decoder input = last token of each hyp
+                last_tokens = [ [s[-1] for s in bs] for bs in seqs ]  # list of lists
+                flat_dec_input = np.array(last_tokens).reshape(-1,1)
+
+                # 4e) check for all‐ended
+                # if every top sequence ends in <end>, we can stop early
+                if all(s[-1] == end_token for bs in seqs for s in bs):
+                    break
+
+            # --- 5) Select best beam & pad to max_dec_len ---
+            batch_preds = []
+            for bs in seqs:
+                # pick beam with highest score
+                best_idx = int(np.argmax([scores[i,j] for j in range(B)]))
+                seq = bs[best_idx]
+                # strip <start>, cut at <end>, then post‐pad 0
+                seq = [tok for tok in seq if tok not in (start_token,)]
+                if end_token in seq:
+                    seq = seq[:seq.index(end_token)]
+                seq += [0] * (max_dec_len - len(seq))
+                batch_preds.append(seq)
+
+            # --- 6) exact‐match for this slice ---
+            tgt_slice = target_seqs[bi*batch_size : bi*batch_size+bsz]
+            for p, t in zip(batch_preds, tgt_slice):
+                if np.array_equal(p, t):
+                    total_correct += 1
+
+        return total_correct / N
