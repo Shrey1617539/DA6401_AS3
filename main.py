@@ -116,7 +116,7 @@ def main(args):
     model.fit(
         x=[train_x, train_y[:, :-1]],
         y=train_y_cat[:, 1:, :],
-        batch_size=400,
+        batch_size=get_config_value(config, args, 'batch_size'),
         epochs=get_config_value(config, args, 'epochs'),
         validation_split=0.0
     )
