@@ -4,6 +4,10 @@ A deep learning project implementing sequence-to-sequence models with and withou
 
 ## Links
 
+Wandb report link: https://api.wandb.ai/links/me21b138-indian-institute-of-technology-madras/5heo3rrt
+
+Github link: https://github.com/Shrey1617539/DA6401_AS3
+
 ## Overview
 
 This project implements neural machine translation using encoder-decoder architectures with and without attention mechanisms. It supports different types of recurrent neural networks (LSTM, GRU, and SimpleRNN) and includes tools for visualizing attention weights to interpret the model's behavior. The implementation is based on TensorFlow/Keras and includes integration with Weights & Biases for experiment tracking.
