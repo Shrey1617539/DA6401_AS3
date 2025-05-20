@@ -296,14 +296,14 @@ if __name__ == "__main__":
         '-ct',
         '--cell_type',
         type=str,
-        default="LSTM",
+        default="GRU",
         help='Type of cell to use in the model (LSTM, GRU, etc.)'
     )
     parser.add_argument(
         '-att',
         '--attention',
         type=bool,
-        default=False,
+        default=True,
         help='Use attention mechanism (True/False)'
     )
     parser.add_argument(
@@ -338,14 +338,14 @@ if __name__ == "__main__":
         '-lr',
         '--learning_rate',
         type=float,
-        default=0.001,
+        default=0.0041760877805365965,
         help='Learning rate for the optimizer'
     )
     parser.add_argument(
         '-emb',
         '--embedding_dim',
         type=int,
-        default=256,
+        default=32,
         help='Dimensionality of the embedding layer'
     )
     parser.add_argument(
@@ -359,14 +359,14 @@ if __name__ == "__main__":
         '-dr',
         '--dropout_rate',
         type=float,
-        default=0.2,
+        default=0.0640614879476808,
         help='Dropout rate for the LSTM/GRU layers'
     )
     parser.add_argument(
         '-rec_dr',
         '--recurrent_dropout_rate',
         type=float,
-        default=0.2,
+        default=0.14003195916675987,
         help='Recurrent dropout rate for the LSTM/GRU layers'
     )
     parser.add_argument(
@@ -387,7 +387,7 @@ if __name__ == "__main__":
         '-beam',
         '--beam_width',
         type=int,
-        default=1,
+        default=3,
         help='Beam width for beam search decoding'
     )
     parser.add_argument(
